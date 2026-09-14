@@ -1,0 +1,12 @@
+{
+  "name": "Titulaires & Remplaçants SQL",
+  "short_name": "SQL",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#161305",
+  "theme_color": "#161305",
+  "icons": [
+    {"src": "https://i.imgur.com/oLjf7rq.png", "sizes": "180x180", "type": "image/png"},
+    {"src": "https://i.imgur.com/oLjf7rq.png", "sizes": "512x512", "type": "image/png"}
+  ]
+}
