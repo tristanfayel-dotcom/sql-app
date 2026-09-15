@@ -369,7 +369,7 @@
       </div>
     </div>
     <nav class="tabs">
-      <button id="tab-week" class="active">Equipe</button>
+      <button id="tab-week" class="active">Equipes</button>
       <button id="tab-general">Récap</button>
       <button id="tab-admin">🔒 Saison &amp; effectifs</button>
     </nav>
@@ -585,6 +585,7 @@
   function poll(){
     if(document.hidden) return;
     if(Object.keys(pendingTeams).length) return; // évite d'écraser une saisie en cours
+    if(adminDirty) return; // évite d'écraser une modification non enregistrée dans "Saison & effectifs"
     runServer('readState').then(function(s){
       state = s;
       renderWeek();
