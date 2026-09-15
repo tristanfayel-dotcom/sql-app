@@ -87,7 +87,12 @@ async function sheetsFetch(path, options){
 }
 
 async function batchGet(ranges){
-  const q = ranges.map(function(r){ return 'ranges=' + encodeURIComponent(r); }).join('&');
+  // valueRenderOption=UNFORMATTED_VALUE : sans ça, l'API Sheets renvoie les
+  // nombres au format d'affichage de la cellule (ex. "51,46" en texte, avec
+  // une virgule) plutôt que le nombre brut 51.46, ce qui cassait le calcul
+  // des moyennes (Number("51,46") = NaN en JS).
+  const q = ranges.map(function(r){ return 'ranges=' + encodeURIComponent(r); }).join('&')
+    + '&valueRenderOption=UNFORMATTED_VALUE';
   const data = await sheetsFetch('/values:batchGet?' + q, { method: 'GET' });
   return data.valueRanges.map(function(vr){ return vr.values || []; });
 }
