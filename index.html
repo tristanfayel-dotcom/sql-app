@@ -283,7 +283,7 @@
   }
   .admin-card h3{font-size:15px; margin-bottom:10px;}
   .admin-row{
-    display:grid; grid-template-columns: 1fr 90px 34px; gap:8px; margin-bottom:6px; align-items:center;
+    display:grid; grid-template-columns: 1fr 78px 100px 34px; gap:8px; margin-bottom:6px; align-items:center;
   }
   .admin-row input{
     font:inherit; font-size:13.5px; border:1px solid var(--line); border-radius:8px; padding:7px 9px;
@@ -293,6 +293,16 @@
   .admin-row .rm{
     border:0; background:transparent; color:var(--bad); font-size:16px; cursor:pointer; padding:4px;
   }
+  .lvl-wrap{display:flex; align-items:center; gap:4px;}
+  .lvl-wrap select{
+    font:inherit; font-size:13px; font-weight:700; border:1px solid var(--line); border-radius:8px;
+    padding:6px 6px; background:var(--surface); color:var(--ink); width:100%;
+  }
+  .lvl-reset{
+    border:0; background:transparent; color:var(--ink-dim); font-size:14px; cursor:pointer; padding:2px;
+    visibility:hidden; opacity:0; transition:opacity .15s; line-height:1;
+  }
+  .lvl-reset.visible{visibility:visible; opacity:1;}
   .admin-maxrow{display:flex; align-items:center; gap:10px; margin-top:8px; font-size:13px;}
   .admin-maxrow label{color:var(--ink-dim); font-weight:600;}
   .admin-maxrow input[type=checkbox]{accent-color:var(--pine);}
@@ -359,7 +369,7 @@
       </div>
     </div>
     <nav class="tabs">
-      <button id="tab-week" class="active">Equipes</button>
+      <button id="tab-week" class="active">Equipe</button>
       <button id="tab-general">Récap</button>
       <button id="tab-admin">🔒 Saison &amp; effectifs</button>
     </nav>
@@ -1109,6 +1119,25 @@
 
   // ---------- Admin ----------
   var adminDirty = false;
+  var LEVELS = ['MJ','J*','JA','JB'];
+  function computeLevel(gender, moy){
+    moy = Number(moy) || 0;
+    if(gender === 'F'){
+      if(moy >= 44) return 'MJ';
+      if(moy >= 38) return 'J*';
+      if(moy >= 30) return 'JA';
+      return 'JB';
+    }
+    if(moy >= 49) return 'MJ';
+    if(moy >= 44) return 'J*';
+    if(moy >= 40) return 'JA';
+    return 'JB';
+  }
+  function levelOptionsHtml(selected){
+    return LEVELS.map(function(l){
+      return '<option value="'+l+'"'+(l===selected?' selected':'')+'>'+l+'</option>';
+    }).join('');
+  }
   function renderAdmin(){
     var root = document.getElementById('adminTeams');
     root.innerHTML = '';
@@ -1125,14 +1154,45 @@
       card.className = 'admin-card';
       card.innerHTML = '<h3>'+team.label+'</h3>';
       team.titulaires.forEach(function(p, pi){
+        if(!p.lvl) p.lvl = computeLevel(team.gender, p.m);
         var row = document.createElement('div');
         row.className = 'admin-row';
         row.innerHTML =
           '<input type="text" value="'+escAttr(p.n)+'" data-role="name">'+
           '<input type="text" inputmode="decimal" class="moy" value="'+p.m+'" data-role="moy">'+
-          '<span></span>';
+          '<span class="lvl-wrap">'+
+            '<select data-role="lvl">'+levelOptionsHtml(p.lvl)+'</select>'+
+            '<button type="button" class="lvl-reset" data-role="lvlreset" title="Revenir au niveau automatique (calculé d’après la moyenne)">↺</button>'+
+          '</span>';
+        var lvlSel = row.querySelector('[data-role=lvl]');
+        var lvlResetBtn = row.querySelector('[data-role=lvlreset]');
+        function syncLvlReset(){ lvlResetBtn.classList.toggle('visible', !!state.teams[ti].titulaires[pi].lvlManual); }
         row.querySelector('[data-role=name]').oninput = function(e){ state.teams[ti].titulaires[pi].n = e.target.value; adminDirty = true; };
-        row.querySelector('[data-role=moy]').oninput = function(e){ state.teams[ti].titulaires[pi].m = parseFloat(e.target.value.replace(',','.'))||0; adminDirty = true; };
+        row.querySelector('[data-role=moy]').oninput = function(e){
+          var m = parseFloat(e.target.value.replace(',','.'))||0;
+          state.teams[ti].titulaires[pi].m = m;
+          if(!state.teams[ti].titulaires[pi].lvlManual){
+            var auto = computeLevel(team.gender, m);
+            state.teams[ti].titulaires[pi].lvl = auto;
+            lvlSel.value = auto;
+          }
+          adminDirty = true;
+        };
+        lvlSel.onchange = function(e){
+          state.teams[ti].titulaires[pi].lvl = e.target.value;
+          state.teams[ti].titulaires[pi].lvlManual = true;
+          syncLvlReset();
+          adminDirty = true;
+        };
+        lvlResetBtn.onclick = function(){
+          state.teams[ti].titulaires[pi].lvlManual = false;
+          var auto = computeLevel(team.gender, state.teams[ti].titulaires[pi].m);
+          state.teams[ti].titulaires[pi].lvl = auto;
+          lvlSel.value = auto;
+          syncLvlReset();
+          adminDirty = true;
+        };
+        syncLvlReset();
         card.appendChild(row);
       });
       var maxRow = document.createElement('div');
@@ -1158,15 +1218,48 @@
   function renderPool(elId, key){
     var el = document.getElementById(elId);
     el.innerHTML = '';
+    var gender = key === 'remplacantsF' ? 'F' : 'M';
     state[key].forEach(function(p, i){
+      if(!p.lvl) p.lvl = computeLevel(gender, p.m);
       var row = document.createElement('div');
       row.className = 'admin-row';
       row.innerHTML =
         '<input type="text" value="'+escAttr(p.n)+'" data-role="name">'+
         '<input type="text" inputmode="decimal" class="moy" value="'+p.m+'" data-role="moy">'+
+        '<span class="lvl-wrap">'+
+          '<select data-role="lvl">'+levelOptionsHtml(p.lvl)+'</select>'+
+          '<button type="button" class="lvl-reset" data-role="lvlreset" title="Revenir au niveau automatique (calculé d’après la moyenne)">↺</button>'+
+        '</span>'+
         '<button class="rm" title="Retirer">×</button>';
+      var lvlSel = row.querySelector('[data-role=lvl]');
+      var lvlResetBtn = row.querySelector('[data-role=lvlreset]');
+      function syncLvlReset(){ lvlResetBtn.classList.toggle('visible', !!state[key][i].lvlManual); }
       row.querySelector('[data-role=name]').oninput = function(e){ state[key][i].n = e.target.value; adminDirty = true; };
-      row.querySelector('[data-role=moy]').oninput = function(e){ state[key][i].m = parseFloat(e.target.value.replace(',','.'))||0; adminDirty = true; };
+      row.querySelector('[data-role=moy]').oninput = function(e){
+        var m = parseFloat(e.target.value.replace(',','.'))||0;
+        state[key][i].m = m;
+        if(!state[key][i].lvlManual){
+          var auto = computeLevel(gender, m);
+          state[key][i].lvl = auto;
+          lvlSel.value = auto;
+        }
+        adminDirty = true;
+      };
+      lvlSel.onchange = function(e){
+        state[key][i].lvl = e.target.value;
+        state[key][i].lvlManual = true;
+        syncLvlReset();
+        adminDirty = true;
+      };
+      lvlResetBtn.onclick = function(){
+        state[key][i].lvlManual = false;
+        var auto = computeLevel(gender, state[key][i].m);
+        state[key][i].lvl = auto;
+        lvlSel.value = auto;
+        syncLvlReset();
+        adminDirty = true;
+      };
+      syncLvlReset();
       row.querySelector('.rm').onclick = function(){ state[key].splice(i,1); renderPool(elId,key); adminDirty = true; };
       el.appendChild(row);
     });
