@@ -303,6 +303,13 @@
     visibility:hidden; opacity:0; transition:opacity .15s; line-height:1;
   }
   .lvl-reset.visible{visibility:visible; opacity:1;}
+  .mj-warning{
+    background:rgba(214,158,46,0.12); border:1px solid rgba(214,158,46,0.4); color:var(--ink);
+    border-radius:12px; padding:12px 14px; margin-bottom:14px; font-size:13px; line-height:1.5;
+  }
+  .mj-warning b{display:block; margin-bottom:4px;}
+  .mj-warning ul{margin:4px 0 0 18px; padding:0;}
+  .mj-warning li{margin-bottom:2px;}
   .admin-maxrow{display:flex; align-items:center; gap:10px; margin-top:8px; font-size:13px;}
   .admin-maxrow label{color:var(--ink-dim); font-weight:600;}
   .admin-maxrow input[type=checkbox]{accent-color:var(--pine);}
@@ -417,6 +424,7 @@
       <div style="margin-top:14px;"><button class="btn primary" id="unlockBtn">Entrer le code</button></div>
     </div>
     <div id="adminContent" style="display:none;">
+      <div id="mjWarnings"></div>
       <div id="adminTeams"></div>
       <div class="pools">
         <div class="admin-card">
@@ -1139,7 +1147,56 @@
       return '<option value="'+l+'"'+(l===selected?' selected':'')+'>'+l+'</option>';
     }).join('');
   }
+  // ---------- Contrôle : règle du Maître-Joueur supplémentaire ----------
+  // (Règlement CSA Quilles de Huit, art. K.2) Dans un même club, une équipe
+  // d'une catégorie donnée doit compter au moins 1 MJ de plus que la
+  // catégorie immédiatement inférieure, 2 de plus que celle 2 rangs plus
+  // bas, etc., jusqu'à épuisement des MJ. Quand plusieurs équipes partagent
+  // une même catégorie, c'est celle qui a le moins de MJ qui fait référence.
+  // Ne s'applique pas si l'équipe fanion est déjà saturée en MJ (4/4).
+  // Ici : avertissement informatif seulement (pas de blocage), car l'app ne
+  // modélise pas les cas particuliers (sursis, Junior/Vétéran de valeur...).
+  function computeMjWarnings(){
+    var warnings = [];
+    ['MASCULINES', 'FEMININES'].forEach(function(group){
+      var teams = state.teams.filter(function(t){ return t.group === group; });
+      if(!teams.length) return;
+      var order = [];
+      var byCategory = {};
+      teams.forEach(function(t){
+        var mj = t.titulaires.filter(function(p){ return (p.lvl || computeLevel(t.gender, p.m)) === 'MJ'; }).length;
+        if(!byCategory[t.category]){ byCategory[t.category] = { mj: mj, labels: [t.label] }; order.push(t.category); }
+        else { byCategory[t.category].mj = Math.min(byCategory[t.category].mj, mj); byCategory[t.category].labels.push(t.label); }
+      });
+      if(!order.length) return;
+      var fanionMj = byCategory[order[0]].mj;
+      if(fanionMj >= 4) return; // équipe fanion saturée en MJ : la règle ne s'applique pas
+      for(var r = 0; r < order.length; r++){
+        for(var s = r + 1; s < order.length; s++){
+          var refR = byCategory[order[r]].mj, refS = byCategory[order[s]].mj;
+          if(refS <= 0) break; // épuisement des MJ : plus de contrainte au-delà
+          var needed = s - r;
+          if(refR - refS < needed){
+            warnings.push(
+              '« ' + order[r] + ' » (' + refR + ' MJ) devrait avoir au moins ' + needed +
+              ' MJ de plus que « ' + order[s] + ' » (' + refS + ' MJ).'
+            );
+          }
+        }
+      }
+    });
+    return warnings;
+  }
+  function renderMjWarnings(){
+    var el = document.getElementById('mjWarnings');
+    var warnings = computeMjWarnings();
+    if(!warnings.length){ el.innerHTML = ''; return; }
+    el.innerHTML = '<div class="mj-warning"><b>⚠️ Règle du Maître-Joueur supplémentaire non respectée</b>' +
+      '<ul>' + warnings.map(function(w){ return '<li>' + w.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</li>'; }).join('') + '</ul>' +
+      'Ceci est indicatif : les dérogations (sursis MJ, Junior/Vétéran de valeur, équipe fanion saturée…) ne sont pas prises en compte automatiquement.</div>';
+  }
   function renderAdmin(){
+    renderMjWarnings();
     var root = document.getElementById('adminTeams');
     root.innerHTML = '';
     var lastGroup = null;
@@ -1178,12 +1235,14 @@
             lvlSel.value = auto;
           }
           adminDirty = true;
+          renderMjWarnings();
         };
         lvlSel.onchange = function(e){
           state.teams[ti].titulaires[pi].lvl = e.target.value;
           state.teams[ti].titulaires[pi].lvlManual = true;
           syncLvlReset();
           adminDirty = true;
+          renderMjWarnings();
         };
         lvlResetBtn.onclick = function(){
           state.teams[ti].titulaires[pi].lvlManual = false;
@@ -1192,6 +1251,7 @@
           lvlSel.value = auto;
           syncLvlReset();
           adminDirty = true;
+          renderMjWarnings();
         };
         syncLvlReset();
         card.appendChild(row);
