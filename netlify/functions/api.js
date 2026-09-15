@@ -115,11 +115,40 @@ async function clearRange(range){
   return sheetsFetch('/values/' + encodeURIComponent(range) + ':clear', { method: 'POST', body: '{}' });
 }
 
+// ---------- Niveau de licence (MJ / J* / JA / JB) ----------
+// Calculé d'office à partir de la moyenne (règlement CSA Quilles de Huit),
+// sans tenir compte du nombre de parties jouées (choix explicite du club).
+// Reste modifiable manuellement dans l'app : dans ce cas la cellule est
+// suffixée par "!" pour retenir que la valeur ne doit plus être recalculée.
+function computeLevel(gender, moy){
+  moy = Number(moy) || 0;
+  if(gender === 'F'){
+    if(moy >= 44) return 'MJ';
+    if(moy >= 38) return 'J*';
+    if(moy >= 30) return 'JA';
+    return 'JB';
+  }
+  if(moy >= 49) return 'MJ';
+  if(moy >= 44) return 'J*';
+  if(moy >= 40) return 'JA';
+  return 'JB';
+}
+function decodeLevel(raw){
+  const s = (raw === undefined || raw === null) ? '' : String(raw);
+  if(!s) return { lvl: '', lvlManual: false };
+  const manual = /!$/.test(s);
+  return { lvl: s.replace(/!$/, ''), lvlManual: manual };
+}
+function encodeLevel(lvl, manual){
+  if(!lvl) return '';
+  return lvl + (manual ? '!' : '');
+}
+
 // ---------- Logique métier (reprise de Code.gs) ----------
 async function readState(){
   const [tRows, rRows, mRows, respRows] = await batchGet([
-    SHEET_TITULAIRES + '!A1:N',
-    SHEET_REMPLACANTS + '!A1:C',
+    SHEET_TITULAIRES + '!A1:R',
+    SHEET_REMPLACANTS + '!A1:D',
     SHEET_MANCHE + '!A1:A2',
     SHEET_REPONSES + '!A1:I'
   ]);
@@ -131,7 +160,15 @@ async function readState(){
     const titulaires = [];
     for(let k = 0; k < 4; k++){
       const name = row[5 + k*2], moy = row[6 + k*2];
-      if(name) titulaires.push({ n: String(name), m: Number(moy) || 0 });
+      if(name){
+        const dec = decodeLevel(row[14 + k]);
+        const m = Number(moy) || 0;
+        titulaires.push({
+          n: String(name), m: m,
+          lvl: dec.lvl || computeLevel(row[1], m),
+          lvlManual: dec.lvlManual
+        });
+      }
     }
     teams.push({
       id: row[0], gender: row[1], group: row[2], category: row[3], label: row[4],
@@ -144,7 +181,9 @@ async function readState(){
   for(let j = 1; j < rRows.length; j++){
     const rr = rRows[j];
     if(!rr || !rr[1]) continue;
-    const entry = { n: String(rr[1]), m: Number(rr[2]) || 0 };
+    const m = Number(rr[2]) || 0;
+    const dec = decodeLevel(rr[3]);
+    const entry = { n: String(rr[1]), m: m, lvl: dec.lvl || computeLevel(rr[0], m), lvlManual: dec.lvlManual };
     if(rr[0] === 'M') remplacantsM.push(entry); else if(rr[0] === 'F') remplacantsF.push(entry);
   }
 
@@ -241,16 +280,20 @@ async function saveAdmin(pin, payload){
       if(tm.titulaires[i]) row = row.concat([tm.titulaires[i].n, tm.titulaires[i].m]); else row = row.concat(['', '']);
     }
     row.push(tm.max === null || tm.max === undefined ? '' : tm.max);
+    for(let i = 0; i < 4; i++){
+      const p = tm.titulaires[i];
+      row.push(p ? encodeLevel(p.lvl, p.lvlManual) : '');
+    }
     return row;
   });
-  await clearRange(SHEET_TITULAIRES + '!A2:N100000');
-  if(teamRows.length) await updateRange(SHEET_TITULAIRES + '!A2:N' + (teamRows.length + 1), teamRows);
+  await clearRange(SHEET_TITULAIRES + '!A2:R100000');
+  if(teamRows.length) await updateRange(SHEET_TITULAIRES + '!A2:R' + (teamRows.length + 1), teamRows);
 
   const rempRows = [];
-  payload.remplacantsM.forEach(function(p){ rempRows.push(['M', p.n, p.m]); });
-  payload.remplacantsF.forEach(function(p){ rempRows.push(['F', p.n, p.m]); });
-  await clearRange(SHEET_REMPLACANTS + '!A2:C100000');
-  if(rempRows.length) await updateRange(SHEET_REMPLACANTS + '!A2:C' + (rempRows.length + 1), rempRows);
+  payload.remplacantsM.forEach(function(p){ rempRows.push(['M', p.n, p.m, encodeLevel(p.lvl, p.lvlManual)]); });
+  payload.remplacantsF.forEach(function(p){ rempRows.push(['F', p.n, p.m, encodeLevel(p.lvl, p.lvlManual)]); });
+  await clearRange(SHEET_REMPLACANTS + '!A2:D100000');
+  if(rempRows.length) await updateRange(SHEET_REMPLACANTS + '!A2:D' + (rempRows.length + 1), rempRows);
 
   return readState();
 }
