@@ -1153,7 +1153,10 @@
   // catégorie immédiatement inférieure, 2 de plus que celle 2 rangs plus
   // bas, etc., jusqu'à épuisement des MJ. Quand plusieurs équipes partagent
   // une même catégorie, c'est celle qui a le moins de MJ qui fait référence.
-  // Ne s'applique pas si l'équipe fanion est déjà saturée en MJ (4/4).
+  // Une catégorie déjà saturée en MJ (4/4) ne peut pas fournir de marge
+  // supplémentaire : elle n'impose alors aucune contrainte aux catégories
+  // inférieures, mais les autres paires de catégories restent vérifiées
+  // normalement (ex. équipe 2 vs équipe 3 même si l'équipe 1 est saturée).
   // Ici : avertissement informatif seulement (pas de blocage), car l'app ne
   // modélise pas les cas particuliers (sursis, Junior/Vétéran de valeur...).
   function computeMjWarnings(){
@@ -1169,11 +1172,11 @@
         else { byCategory[t.category].mj = Math.min(byCategory[t.category].mj, mj); byCategory[t.category].labels.push(t.label); }
       });
       if(!order.length) return;
-      var fanionMj = byCategory[order[0]].mj;
-      if(fanionMj >= 4) return; // équipe fanion saturée en MJ : la règle ne s'applique pas
       for(var r = 0; r < order.length; r++){
+        var refR = byCategory[order[r]].mj;
+        if(refR >= 4) continue; // catégorie r saturée en MJ (4/4) : elle ne peut pas fournir de marge supplémentaire, on ne contraint pas les catégories en-dessous par rapport à elle
         for(var s = r + 1; s < order.length; s++){
-          var refR = byCategory[order[r]].mj, refS = byCategory[order[s]].mj;
+          var refS = byCategory[order[s]].mj;
           if(refS <= 0) break; // épuisement des MJ : plus de contrainte au-delà
           var needed = s - r;
           if(refR - refS < needed){
@@ -1193,7 +1196,7 @@
     if(!warnings.length){ el.innerHTML = ''; return; }
     el.innerHTML = '<div class="mj-warning"><b>⚠️ Règle du Maître-Joueur supplémentaire non respectée</b>' +
       '<ul>' + warnings.map(function(w){ return '<li>' + w.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</li>'; }).join('') + '</ul>' +
-      'Ceci est indicatif : les dérogations (sursis MJ, Junior/Vétéran de valeur, équipe fanion saturée…) ne sont pas prises en compte automatiquement.</div>';
+      'Ceci est indicatif : les dérogations (sursis MJ, Junior/Vétéran de valeur…) ne sont pas prises en compte automatiquement.</div>';
   }
   function renderAdmin(){
     renderMjWarnings();
